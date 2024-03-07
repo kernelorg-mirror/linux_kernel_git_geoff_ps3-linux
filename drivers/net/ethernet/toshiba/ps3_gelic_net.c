@@ -401,7 +401,7 @@ static int gelic_descr_prepare_rx(struct gelic_card *card,
 	descr->skb = napi_build_skb(napi_buff, napi_buff_size);
 
 	if (unlikely(!descr->skb)) {
-		skb_free_frag(napi_buff);
+		page_frag_free(napi_buff);
 		return -ENOMEM;
 	}
 
@@ -409,10 +409,11 @@ static int gelic_descr_prepare_rx(struct gelic_card *card,
 				  DMA_FROM_DEVICE);
 
 	if (dma_mapping_error(dev, cpu_addr)) {
-		skb_free_frag(napi_buff);
-		descr->skb = NULL;
 		dev_err_once(dev, "%s:Could not iommu-map rx buffer\n",
 			     __func__);
+		dev_kfree_skb(descr->skb);
+		descr->skb = NULL;
+		page_frag_free(napi_buff);
 		gelic_descr_set_status(descr, GELIC_DESCR_DMA_NOT_IN_USE);
 		return -ENOMEM;
 	}
@@ -436,14 +437,17 @@ static void gelic_card_release_rx_chain(struct gelic_card *card)
 
 	do {
 		if (descr->skb) {
+			void *napi_buff = descr->skb->data;
+
 			dma_unmap_single(ctodev(card),
 				be32_to_cpu(descr->hw_regs.payload.dev_addr),
 				descr->skb->len,
 				DMA_FROM_DEVICE);
 			descr->hw_regs.payload.dev_addr = 0;
 			descr->hw_regs.payload.size = 0;
-			dev_kfree_skb_any(descr->skb);
+			dev_kfree_skb(descr->skb);
 			descr->skb = NULL;
+			page_frag_free(napi_buff);
 			gelic_descr_set_status(descr,
 				GELIC_DESCR_DMA_NOT_IN_USE);
 		}
