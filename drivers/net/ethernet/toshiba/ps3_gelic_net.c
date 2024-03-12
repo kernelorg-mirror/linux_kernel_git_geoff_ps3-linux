@@ -510,13 +510,15 @@ static void gelic_descr_release_tx(struct gelic_card *card,
 				       struct gelic_descr *descr)
 {
 	struct sk_buff *skb = descr->skb;
+	void *napi_buff = descr->skb->data;
 
 	BUG_ON(!(be32_to_cpu(descr->hw_regs.data_status) & GELIC_DESCR_TX_TAIL));
 
 	dma_unmap_single(ctodev(card),
 		be32_to_cpu(descr->hw_regs.payload.dev_addr), skb->len,
 		DMA_TO_DEVICE);
-	dev_kfree_skb_any(skb);
+	dev_kfree_skb(skb);
+	page_frag_free(napi_buff);
 
 	descr->hw_regs.payload.dev_addr = 0;
 	descr->hw_regs.payload.size = 0;
@@ -756,7 +758,7 @@ static struct sk_buff *gelic_put_vlan_tag(struct sk_buff *skb,
 		skb = skb_realloc_headroom(sk_tmp, VLAN_HLEN);
 		if (!skb)
 			return NULL;
-		dev_kfree_skb_any(sk_tmp);
+		dev_kfree_skb(sk_tmp);
 	}
 	veth = skb_push(skb, VLAN_HLEN);
 
@@ -879,7 +881,7 @@ netdev_tx_t gelic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 		 * would continue, just release skb and return
 		 */
 		netdev->stats.tx_dropped++;
-		dev_kfree_skb_any(skb);
+		dev_kfree_skb(skb);
 		spin_unlock_irqrestore(&card->tx_lock, flags);
 		return NETDEV_TX_OK;
 	}
